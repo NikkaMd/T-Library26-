@@ -1,0 +1,214 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <fstream>
+#include <algorithm>
+#include <limits>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
+struct Book {
+    std::string title;
+    std::string author;
+    std::string genre;
+    int year;
+    std::string description;
+    bool is_read = false;
+    bool is_favorite = false;
+
+    void to_json(json& j) const {
+        j = json{{"title", title},
+                {"author", author},
+                {"genre", genre},
+                {"year", year},
+                {"description", description},
+                {"is_read", is_read},
+                {"is_favorite", is_favorite}};
+    }
+
+    static Book from_json(const json& j) {
+        Book book;
+        book.title = j.at("title").get<std::string>();
+        book.author = j.at("author").get<std::string>();
+        book.genre = j.at("genre").get<std::string>();
+        book.year = j.at("year").get<int>();
+        book.description = j.at("description").get<std::string>();
+        book.is_read = j.at("is_read").get<bool>();
+        book.is_favorite = j.at("is_favorite").get<bool>();
+        return book;
+    }
+};
+
+class Library {
+private:
+    std::vector<Book> books;
+    std::string data_file = "books.json";
+
+public:
+    void save_books() {
+        json books_json = json::array();
+        for (const auto& book : books) {
+            json book_json;
+            book.to_json(book_json);
+            books_json.push_back(book_json);
+        }
+        std::ofstream file(data_file);
+        file << books_json.dump(2);
+    }
+
+    void load_books() {
+        std::ifstream file(data_file);
+        if (!file.is_open()) return;
+
+        try {
+            json data;
+            file >> data;
+            for (const auto& book_json : data) {
+                books.push_back(Book::from_json(book_json));
+            }
+        } catch (const json::parse_error& e) {
+            std::cout << "Ошибка загрузки данных: " << e.what() << "\n";
+        } catch (...) {
+            std::cout << "Неизвестная ошибка при загрузке данных.\n";
+        }
+    }
+
+public:
+    Library() {
+        load_books();
+    }
+
+    void add_book(const Book& book) {
+        books.push_back(book);
+        save_books();
+        std::cout << "Книга '" << book.title << "' добавлена!\n";
+    }
+
+    bool remove_book(const std::string& title) {
+        for (auto it = books.begin(); it != books.end(); ++it) {
+            if (it->title == title) {
+                std::cout << "Книга '" << title << "' удалена.\n";
+                books.erase(it);
+                save_books();
+                return true;
+            }
+        }
+        std::cout << "Книга '" << title << "' не найдена.\n";
+        return false;
+    }
+
+    std::vector<Book> find_books(const std::string& keyword) {
+        std::vector<Book> result;
+        for (const auto& book : books) {
+            if (book.title.find(keyword) != std::string::npos ||
+                book.author.find(keyword) != std::string::npos ||
+                book.description.find(keyword) != std::string::npos) {
+                result.push_back(book);
+            }
+        }
+        return result;
+    }
+
+    const std::vector<Book>& get_all_books() const {
+        return books;
+    }
+
+    std::vector<Book> sort_books(const std::string& by) {
+        std::vector<Book> sorted = books;
+        if (by == "title") {
+            std::sort(sorted.begin(), sorted.end(),
+                [](const Book& a, const Book& b) { return a.title < b.title; });
+        } else if (by == "author") {
+            std::sort(sorted.begin(), sorted.end(),
+                [](const Book& a, const Book& b) { return a.author < b.author; });
+        } else if (by == "year") {
+            std::sort(sorted.begin(), sorted.end(),
+                [](const Book& a, const Book& b) { return a.year < b.year; });
+        }
+        return sorted;
+    }
+
+    std::vector<Book> filter_books(const std::string& genre, bool is_read) {
+        std::vector<Book> filtered;
+        for (const auto& book : books) {
+            if ((genre.empty() || book.genre == genre) &&
+                (is_read == book.is_read)) {
+                filtered.push_back(book);
+            }
+        }
+        return filtered;
+    }
+
+    bool toggle_read_status(const std::string& title) {
+        for (auto& book : books) {
+            if (book.title == title) {
+                book.is_read = !book.is_read;
+                save_books();
+                std::cout << "Статус книги '" << title << "' изменён.\n";
+                return true;
+            }
+        }
+        std::cout << "Книга '" << title << "' не найдена.\n";
+        return false;
+    }
+
+    bool toggle_favorite(const std::string& title) {
+        for (auto& book : books) {
+            if (book.title == title) {
+                book.is_favorite = !book.is_favorite;
+                save_books();
+                std::cout << "Статус избранного для книги '" << title << "' изменён.\n";
+                return true;
+            }
+        }
+        std::cout << "Книга '" << title << "' не найдена.\n";
+        return false;
+    }
+
+    std::vector<Book> get_favorites() {
+        std::vector<Book> favorites;
+        for (const auto& book : books) {
+            if (book.is_favorite) {
+                favorites.push_back(book);
+            }
+        }
+        return favorites;
+    }
+};
+
+void print_books(const std::vector<Book>& books) {
+    if (books.empty()) {
+        std::cout << "Книги не найдены.\n";
+        return;
+    }
+    for (size_t i = 0; i < books.size(); ++i) {
+        const auto& book = books[i];
+        std::cout << i + 1 << ". " << book.title << " — " << book.author << " (" << book.year << ")\n";
+        std::cout << "   Жанр: " << book.genre << "\n";
+        std::cout << "   Описание: " << book.description << "\n";
+        std::cout << "   Статус: " << (book.is_read ? "✓ Прочитана" : "☐ Не прочитана")
+                  << ", " << (book.is_favorite ? "★ В избранном" : "☆ Не в избранном") << "\n\n";
+    }
+}
+
+int main() {
+    Library library;
+    std::cout << "Добро пожаловать в T-Библиотеку!\n";
+
+    while (true) {
+        std::cout << "\nВыберите действие:\n";
+        std::cout << "1. Добавить книгу\n";
+        std::cout << "2. Просмотреть все книги\n";
+        std::cout << "3. Поиск книг\n";
+        std::cout << "4. Книги в избранном\n";
+        std::cout << "5. Сортировка книг\n";
+        std::cout << "6. Фильтрация книг\n";
+        std::cout << "7. Изменить статус книги (прочитана/не прочитана)\n";
+        std::cout << "8. Добавить/убрать из избранного\n";
+        std::cout << "9. Удалить книгу\n";
+        std::cout << "0. Выход\n";
+
+        int choice;
+        std::cin >> choice;
+        std::cin.ignore();
